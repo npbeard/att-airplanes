@@ -1,23 +1,12 @@
-"""
-Polars analytics on prepared Parquet datasets.
-
-Every public function is a self-contained lazy pipeline:
-  pl.scan_parquet(...)  <- lazy read, no data loaded yet
-  .filter(...)          <- predicate pushed down to the file scan
-  .group_by(...).agg(...)
-  .join(pl.scan_parquet(...), ...)  <- lazy join, optimised together
-  .collect()            <- single execution point
-"""
-
 from pathlib import Path
 
 import polars as pl
 
 DATA_DIR = Path("data")
 
-CLASS_LABELS = {"E": "Economy", "P": "Premium", "B": "Business"}
 CLASS_ORDER = ["Economy", "Premium", "Business"]
 
+# reusable expression to translate E/P/B codes into readable labels
 _CABIN_LABEL = (
     pl.when(pl.col("class") == "E").then(pl.lit("Economy"))
     .when(pl.col("class") == "P").then(pl.lit("Premium"))
@@ -27,11 +16,13 @@ _CABIN_LABEL = (
 )
 
 
+# returns the top N routes by total revenue, filtered by cabin class and continent
 def revenue_by_route(
     class_filter: list[str],
     continent_filter: list[str],
     top_n: int = 15,
 ) -> pl.DataFrame:
+    # pull only the columns we need from routes to keep the join light
     route_meta = (
         pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
         .select(["route_code", "origin_city", "dest_city", "origin_continent", "distance"])
@@ -40,16 +31,19 @@ def revenue_by_route(
     return (
         pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
         .filter(pl.col("class").is_in(class_filter))
+        # collapse the class breakdown into one row per route
         .group_by("route_code")
         .agg(
             pl.col("ticket_count").sum(),
             pl.col("revenue").sum(),
             pl.col("avg_ticket_value").mean(),
         )
+        # bring in city names and continent from the routes file
         .join(route_meta, on="route_code", how="left")
         .filter(pl.col("origin_continent").is_in(continent_filter))
         .sort("revenue", descending=True)
         .head(top_n)
+        # fall back to route_code if city name is missing
         .with_columns(
             (
                 pl.col("origin_city").fill_null(pl.col("route_code"))
@@ -61,6 +55,7 @@ def revenue_by_route(
     )
 
 
+# returns total revenue and ticket count per cabin class (used for the donut chart)
 def revenue_by_class(class_filter: list[str]) -> pl.DataFrame:
     return (
         pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
@@ -70,12 +65,14 @@ def revenue_by_class(class_filter: list[str]) -> pl.DataFrame:
             pl.col("ticket_count").sum(),
             pl.col("revenue").sum(),
         )
+        # convert E/P/B codes to readable names before returning
         .with_columns(_CABIN_LABEL)
         .sort("revenue", descending=True)
         .collect()
     )
 
 
+# returns monthly revenue aggregated across classes, with optional year filter
 def monthly_trend(
     class_filter: list[str],
     year_filter: int | None = None,
@@ -84,6 +81,7 @@ def monthly_trend(
         pl.scan_parquet(DATA_DIR / "monthly_revenue.parquet")
         .filter(pl.col("class").is_in(class_filter))
     )
+    # year filter is optional — if None, all years are included
     if year_filter is not None:
         lf = lf.filter(pl.col("year") == year_filter)
 
@@ -95,6 +93,7 @@ def monthly_trend(
         )
         .sort("year", "month")
         .collect()
+        # build a proper date column so Plotly renders the x-axis correctly
         .with_columns(
             pl.date(
                 pl.col("year").cast(pl.Int32),

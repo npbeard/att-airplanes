@@ -1,13 +1,3 @@
-"""
-Run this script once to pull data from DB2 and save Parquet files for the dashboard.
-
-    pip:  python prepare_data.py
-    uv:   uv run python prepare_data.py
-
-The TICKETS table has 248M rows. All aggregations run inside DB2 so only
-small result sets are transferred.
-"""
-
 from pathlib import Path
 
 import db
@@ -15,6 +5,7 @@ import db
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
+# each tuple is (output filename, fetch function from db.py)
 TASKS = [
     ("routes_with_airports",   db.fetch_routes_with_airports),
     ("revenue_by_route_class", db.fetch_revenue_by_route_class),
@@ -23,6 +14,7 @@ TASKS = [
 
 
 def main() -> None:
+    # check network before attempting a full DB2 connection
     print("Checking network connectivity...")
     try:
         db.tcp_check()

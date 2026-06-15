@@ -6,6 +6,7 @@ import polars as pl
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
+# load credentials from .env file
 load_dotenv()
 
 DB_HOST = os.environ["DB_HOST"]
@@ -17,6 +18,7 @@ SCHEMA = "ATTGRP4"
 
 
 def make_engine():
+    # quote_plus handles special characters in the password
     user = quote_plus(DB_USERNAME)
     password = quote_plus(DB_PASSWORD)
     url = f"db2+ibm_db://{user}:{password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
@@ -24,6 +26,7 @@ def make_engine():
 
 
 def tcp_check(host: str = DB_HOST, port: int = DB_PORT, timeout: float = 8.0) -> bool:
+    # checks if the server is reachable before attempting a full DB2 connection
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
         sock.connect((host, port))
@@ -31,6 +34,7 @@ def tcp_check(host: str = DB_HOST, port: int = DB_PORT, timeout: float = 8.0) ->
 
 
 def test_connection(engine) -> bool:
+    # SYSIBM.SYSDUMMY1 is DB2's equivalent of SELECT 1, just to confirm auth works
     with engine.connect() as conn:
         result = conn.execute(text("SELECT 1 AS ok FROM SYSIBM.SYSDUMMY1"))
         row = result.fetchone()
@@ -38,13 +42,14 @@ def test_connection(engine) -> bool:
 
 
 def read_sql(query: str, engine) -> pl.DataFrame:
+    # DB2 returns column names in uppercase, so we lowercase them for consistency
     with engine.connect() as conn:
         df = pl.read_database(query=query, connection=conn)
     return df.rename({col: col.strip().lower() for col in df.columns})
 
 
 def fetch_revenue_by_route_class(engine) -> pl.DataFrame:
-    """Revenue aggregated by route and cabin class from TICKETS (248M rows — runs in DB)."""
+    # TICKETS has 248M rows so we aggregate inside DB2, not in Python
     query = f"""
     SELECT
         t.ROUTE_CODE,
@@ -61,7 +66,7 @@ def fetch_revenue_by_route_class(engine) -> pl.DataFrame:
 
 
 def fetch_monthly_revenue(engine) -> pl.DataFrame:
-    """Monthly revenue trend by cabin class."""
+    # breaks revenue down by year/month and cabin class for the trend chart
     query = f"""
     SELECT
         YEAR(t.DEPARTURE) AS year,
@@ -77,7 +82,7 @@ def fetch_monthly_revenue(engine) -> pl.DataFrame:
 
 
 def fetch_routes_with_airports(engine) -> pl.DataFrame:
-    """Route details joined with origin and destination airport metadata."""
+    # AIRPORTS is joined twice (aliased as orig and dest) to get both endpoints of each route
     query = f"""
     SELECT
         r.ROUTE_CODE, r.ORIGIN, r.DESTINATION, r.PARENT_ROUTE,

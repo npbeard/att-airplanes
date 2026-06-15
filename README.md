@@ -1,7 +1,11 @@
 # Group 4 – ATT Airlines Revenue Performance Dashboard
 
 ## Group Members
-- *(add names)*
+- Jose Maria Brandao
+- Juan Camilo Lujan
+- Laurenz Jakob Kluth
+- Nicolas Beard
+- Stephan Pentchev
 
 ## Schema Used
 `ATTGRP4` on the `ATTPLANE` DB2 database hosted at `52.211.123.34:25010`.
@@ -19,11 +23,11 @@ uv run pip install ibm_db ibm_db_sa
 
 ## How to Run
 
-**Step 1 – create a `.env` file based on `.env.example` and fill in your credentials:**
+**Step 1 – create a `.env` file with your DB2 credentials (required before running anything):**
 ```bash
 cp .env.example .env
-# then open .env and fill in the values
 ```
+Then open `.env` and fill in the values for `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD`. The app will fail with a clear error if any of these are missing.
 
 **Step 2 – prepare data (runs once, queries DB2, saves Parquet files):**
 ```bash
@@ -44,8 +48,18 @@ The dashboard focuses on revenue performance across the airline network using th
 - Revenue share by cabin class (Economy, Premium, Business)
 - Monthly revenue trend over time (filterable by year)
 
+
 ## Key Findings
-*(fill in after running the dashboard)*
+- Seasonality: Overall, November and April are valley months with lowest revenue generation. August and January, on the other hand are the months with highest revenue. This matches with usual holiday trends.
+- Revenue by cabin class: The vast majority of the revenue (77%) comes from Economy class, while less than 5% of revenue comes from Premium class.
+- Key routes: The top 8 routes in revenue generation are the ones that connect the following cities (in both ways):
+Naples and Las Vegas
+Tokyo and Rome
+Hongkong and Manchester
+Lille and Tokyo.
+    These are all long distance, intercontinental routes. Tokyo is the city with highest presence.
+- Based on the trend chart does not seem to be increasing or decreasing over time. 
+
 
 ## Assumptions
 - `CLASS` codes: `E` = Economy, `P` = Premium, `B` = Business.
