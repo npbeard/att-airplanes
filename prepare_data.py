@@ -5,8 +5,7 @@ Run this script once to pull data from DB2 and save Parquet files for the dashbo
     uv:   uv run python prepare_data.py
 
 The TICKETS table has 248M rows. All aggregations run inside DB2 so only
-small result sets are transferred. Expect the passenger geography query to
-take several minutes because it joins TICKETS with PASSENGERS.
+small result sets are transferred.
 """
 
 from pathlib import Path
@@ -18,10 +17,8 @@ DATA_DIR.mkdir(exist_ok=True)
 
 TASKS = [
     ("routes_with_airports",   db.fetch_routes_with_airports),
-    ("fleet_utilization",      db.fetch_fleet_utilization),
     ("revenue_by_route_class", db.fetch_revenue_by_route_class),
     ("monthly_revenue",        db.fetch_monthly_revenue),
-    ("passenger_geography",    db.fetch_passenger_geography),   # slowest — large join
 ]
 
 

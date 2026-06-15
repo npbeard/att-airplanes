@@ -76,53 +76,6 @@ def fetch_monthly_revenue(engine) -> pl.DataFrame:
     return read_sql(query, engine)
 
 
-def fetch_passenger_geography(engine) -> pl.DataFrame:
-    """Revenue by passenger country and VIP status (joins TICKETS + PASSENGERS)."""
-    query = f"""
-    SELECT
-        p.COUNTRY,
-        CASE WHEN p.VIPCARD IS NOT NULL THEN 'VIP' ELSE 'Regular' END AS vip_status,
-        t.CLASS,
-        COUNT(DISTINCT t.PASSENGER_ID) AS passenger_count,
-        COUNT(*) AS ticket_count,
-        SUM(t.TOTAL_AMOUNT) AS revenue,
-        AVG(t.TOTAL_AMOUNT) AS avg_ticket_value
-    FROM {SCHEMA}.TICKETS t
-    JOIN {SCHEMA}.PASSENGERS p ON t.PASSENGER_ID = p.ID
-    GROUP BY
-        p.COUNTRY,
-        CASE WHEN p.VIPCARD IS NOT NULL THEN 'VIP' ELSE 'Regular' END,
-        t.CLASS
-    """
-    return read_sql(query, engine)
-
-
-def fetch_fleet_utilization(engine) -> pl.DataFrame:
-    """Scheduled flights and distance per aircraft joined with airplane specs."""
-    query = f"""
-    SELECT
-        f.AIRPLANE AS aircraft_registration,
-        a.MODEL,
-        a.BUILD_DATE,
-        a.FUEL_GALLONS_HOUR,
-        a.MAINTENANCE_TAKEOFFS,
-        a.MAINTENANCE_FLIGHT_HOURS,
-        a.TOTAL_FLIGHT_DISTANCE,
-        COALESCE(a.SEATS_BUSINESS, 0) + COALESCE(a.SEATS_PREMIUM, 0) + COALESCE(a.SEATS_ECONOMY, 0) AS total_seats,
-        COUNT(*) AS scheduled_flights,
-        SUM(r.DISTANCE) AS total_scheduled_distance,
-        SUM(r.FLIGHT_MINUTES) AS total_scheduled_minutes
-    FROM {SCHEMA}.FLIGHTS f
-    JOIN {SCHEMA}.AIRPLANES a ON f.AIRPLANE = a.AIRCRAFT_REGISTRATION
-    JOIN {SCHEMA}.ROUTES r ON f.ROUTE_CODE = r.ROUTE_CODE
-    GROUP BY
-        f.AIRPLANE, a.MODEL, a.BUILD_DATE, a.FUEL_GALLONS_HOUR,
-        a.MAINTENANCE_TAKEOFFS, a.MAINTENANCE_FLIGHT_HOURS, a.TOTAL_FLIGHT_DISTANCE,
-        a.SEATS_BUSINESS, a.SEATS_PREMIUM, a.SEATS_ECONOMY
-    """
-    return read_sql(query, engine)
-
-
 def fetch_routes_with_airports(engine) -> pl.DataFrame:
     """Route details joined with origin and destination airport metadata."""
     query = f"""

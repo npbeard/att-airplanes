@@ -1,4 +1,4 @@
-# Group 4 – ATT Airlines Operations Dashboard
+# Group 4 – ATT Airlines Revenue Performance Dashboard
 
 ## Group Members
 - *(add names)*
@@ -8,19 +8,37 @@
 
 ## How to Install
 
-### Option A – pip (recommended by instructor)
+> **Windows users:** `ibm_db` does not install cleanly via a plain `pip install` on Windows.
+> See the workaround in the section below before running `pip install -r requirements.txt`.
+
+### Standard install (pip)
 ```bash
 pip uninstall -y ibm_db ibm_db_sa sqlalchemy
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Option B – uv
+### Alternative (uv)
 ```bash
 uv sync
-# if ibm_db fails inside uv, install manually into the venv:
+# if ibm_db fails inside uv, install it manually into the venv:
 uv run pip install ibm_db ibm_db_sa
 ```
+
+### Windows workaround for ibm_db
+`ibm_db` is a C extension that requires the IBM Data Server Driver Client to be installed
+on the machine. On Windows, the pip wheel often fails because that driver is missing.
+The fix used in this project was to install `uv` and let it manage the virtual environment,
+then force-install `ibm_db` and `ibm_db_sa` directly into the uv-managed venv:
+
+```bash
+pip install uv
+uv sync
+uv run pip install ibm_db ibm_db_sa
+```
+
+If `ibm_db` still fails to compile, download and install the
+**IBM Data Server Driver Package** from the IBM website, then retry the pip install.
 
 ## How to Run
 
@@ -35,7 +53,6 @@ cp .env.example .env
 python prepare_data.py        # pip
 uv run python prepare_data.py # uv
 ```
-> The `passenger_geography` query joins 248M tickets with 500K passengers and may take several minutes.
 
 **Step 3 – launch the dashboard:**
 ```bash
@@ -43,14 +60,14 @@ streamlit run app.py        # pip
 uv run streamlit run app.py # uv
 ```
 
-## Business Questions Answered
+## Business Question Answered
 
-| Section | Question |
-|---|---|
-| Revenue Performance | Which routes, cabin classes, and months generate the most revenue? |
-| Route Efficiency | Which routes yield the highest revenue per kilometer? How does distance relate to ticket value? |
-| Fleet Utilization | Which aircraft models are most scheduled? Which aircraft show high maintenance indicators? |
-| Passenger Segments | Which countries drive the most revenue? How do VIP and regular passengers differ? |
+> **Which routes, cabin classes, and departure periods generate the most revenue?**
+
+The dashboard focuses on revenue performance across the airline network using three views:
+- Top N routes by total revenue (filterable by cabin class and continent)
+- Revenue share by cabin class (Economy, Premium, Business)
+- Monthly revenue trend over time (filterable by year)
 
 ## Key Findings
 *(fill in after running the dashboard)*
@@ -58,13 +75,10 @@ uv run streamlit run app.py # uv
 ## Assumptions
 - `CLASS` codes: `E` = Economy, `P` = Premium, `B` = Business.
 - All monetary amounts are in the currency stored in `TOTAL_AMOUNT` (assumed USD).
-- `VIPCARD IS NOT NULL` is used to classify VIP passengers.
-- Aircraft age is computed as 2025 minus the `BUILD_DATE` year.
 
 ## Limitations
 - All TICKETS aggregations run entirely inside DB2 to avoid transferring 248M rows.
 - Parquet files must be regenerated if the source data changes.
-- The map/geo chart is not included due to only 30 airports being in the reference table.
 
 ## Project Structure
 ```
