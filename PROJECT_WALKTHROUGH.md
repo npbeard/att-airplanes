@@ -30,13 +30,10 @@ The professor's instructions likely assumed a Linux/Mac environment or that stud
 The project uses **`uv`** as the package manager instead of plain `pip`. `uv` creates an isolated virtual environment and resolves dependencies more predictably. The key steps that made it work:
 
 ```bash
-# 1. Install uv (if not already installed)
-pip install uv
-
-# 2. Let uv resolve and install all declared dependencies
+# 1. Let uv resolve and install all declared dependencies
 uv sync
 
-# 3. Force-install ibm_db and ibm_db_sa directly into uv's managed venv
+# 2. Force-install ibm_db and ibm_db_sa directly into uv's managed venv
 #    (uv sync may skip or fail these; installing them separately avoids the conflict)
 uv run pip install ibm_db ibm_db_sa
 ```
@@ -50,22 +47,22 @@ Two reasons:
 
 ### Environment File
 
-Credentials are stored in a `.env` file (not committed to git). Copy the example and the defaults are already correct for Group 4:
+Credentials are stored in a `.env` file that is listed in `.gitignore` and never committed. A `.env.example` file with empty placeholders is committed so that anyone cloning the project knows which variables to define:
 
+```
+DB_HOST=
+DB_PORT=
+DB_NAME=
+DB_USERNAME=
+DB_PASSWORD=
+```
+
+Copy it and fill in the values:
 ```bash
 cp .env.example .env
 ```
 
-The `.env` file contains:
-```
-DB_HOST=52.211.123.34
-DB_PORT=25010
-DB_NAME=ATTPLANE
-DB_USERNAME=attgrp4
-DB_PASSWORD=bigdata
-```
-
-These are loaded at runtime by `python-dotenv` inside `db.py`.
+These are loaded at runtime by `python-dotenv` inside `db.py`. The code uses `os.environ["KEY"]` (no hardcoded defaults), so the app will raise a clear error if the `.env` file is missing.
 
 ### How the Connection Works in Code (`db.py`)
 

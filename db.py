@@ -8,11 +8,11 @@ from sqlalchemy import create_engine, text
 
 load_dotenv()
 
-DB_HOST = os.getenv("DB_HOST", "52.211.123.34")
-DB_PORT = int(os.getenv("DB_PORT", "25010"))
-DB_NAME = os.getenv("DB_NAME", "ATTPLANE")
-DB_USERNAME = os.getenv("DB_USERNAME", "attgrp4")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "bigdata")
+DB_HOST = os.environ["DB_HOST"]
+DB_PORT = int(os.environ["DB_PORT"])
+DB_NAME = os.environ["DB_NAME"]
+DB_USERNAME = os.environ["DB_USERNAME"]
+DB_PASSWORD = os.environ["DB_PASSWORD"]
 SCHEMA = "ATTGRP4"
 
 

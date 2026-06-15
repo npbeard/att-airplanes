@@ -51,8 +51,7 @@ def main() -> None:
             print(f"FAILED: {exc}")
 
     print("\nDone. Start the dashboard with:")
-    print("  streamlit run app.py        (pip)")
-    print("  uv run streamlit run app.py (uv)")
+    print("  uv run streamlit run app.py")
 
 
 if __name__ == "__main__":

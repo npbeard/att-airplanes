@@ -8,56 +8,31 @@
 
 ## How to Install
 
-> **Windows users:** `ibm_db` does not install cleanly via a plain `pip install` on Windows.
-> See the workaround in the section below before running `pip install -r requirements.txt`.
-
-### Standard install (pip)
 ```bash
-pip uninstall -y ibm_db ibm_db_sa sqlalchemy
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Alternative (uv)
-```bash
-uv sync
-# if ibm_db fails inside uv, install it manually into the venv:
-uv run pip install ibm_db ibm_db_sa
-```
-
-### Windows workaround for ibm_db
-`ibm_db` is a C extension that requires the IBM Data Server Driver Client to be installed
-on the machine. On Windows, the pip wheel often fails because that driver is missing.
-The fix used in this project was to install `uv` and let it manage the virtual environment,
-then force-install `ibm_db` and `ibm_db_sa` directly into the uv-managed venv:
-
-```bash
-pip install uv
 uv sync
 uv run pip install ibm_db ibm_db_sa
 ```
 
-If `ibm_db` still fails to compile, download and install the
-**IBM Data Server Driver Package** from the IBM website, then retry the pip install.
+> `ibm_db` is a C extension that requires IBM's native DB2 driver. On Windows it does not
+> install cleanly through a standard `pip install`. Using `uv sync` first, then installing
+> `ibm_db` and `ibm_db_sa` separately into the uv-managed venv, is the workaround that works.
 
 ## How to Run
 
-**Step 1 – copy and configure the environment file:**
+**Step 1 – create a `.env` file based on `.env.example` and fill in your credentials:**
 ```bash
 cp .env.example .env
-# credentials are already set for attgrp4 / bigdata
+# then open .env and fill in the values
 ```
 
 **Step 2 – prepare data (runs once, queries DB2, saves Parquet files):**
 ```bash
-python prepare_data.py        # pip
-uv run python prepare_data.py # uv
+uv run python prepare_data.py
 ```
 
 **Step 3 – launch the dashboard:**
 ```bash
-streamlit run app.py        # pip
-uv run streamlit run app.py # uv
+uv run streamlit run app.py
 ```
 
 ## Business Question Answered
