@@ -57,10 +57,13 @@ uv run streamlit run app.py
 
 > **Which routes, cabin classes, and departure periods generate the most revenue?**
 
-The dashboard focuses on revenue performance across the airline network using three views:
-- Top N routes by total revenue (filterable by cabin class and continent)
+The dashboard focuses on revenue performance across the airline network using these views:
+- Top N routes by total revenue and average ticket value (filterable by cabin class and continent)
 - Revenue share by cabin class (Economy, Premium, Business)
-- Monthly revenue trend over time (filterable by year)
+- Revenue and ticket volume by origin continent
+- Monthly revenue trend, overall and stacked by cabin class (filterable by year)
+- Route efficiency: top routes by revenue per km
+- Revenue by origin airport on a world map (filterable by cabin class and continent)
 
 
 ## Key Findings
@@ -78,6 +81,8 @@ Lille and Tokyo.
 ## Assumptions
 - `CLASS` codes: `E` = Economy, `P` = Premium, `B` = Business.
 - All monetary amounts are in the currency stored in `TOTAL_AMOUNT` (assumed USD).
+- Map revenue is attributed to the route's **origin** (departure) airport.
+- Route-level average ticket value is computed as `total revenue / total tickets`.
 
 ## Limitations
 - All TICKETS aggregations run entirely inside DB2 to avoid transferring 248M rows.
