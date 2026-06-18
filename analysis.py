@@ -35,8 +35,8 @@ def revenue_by_route(
         .group_by("route_code")
         .agg(
             pl.col("ticket_count").sum(),
-            pl.col("revenue").sum(),
-            pl.col("avg_ticket_value").mean(),
+            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
+            pl.col("avg_ticket_value").mean().cast(pl.Float64).alias("avg_ticket_value"),
         )
         # bring in city names and continent from the routes file
         .join(route_meta, on="route_code", how="left")
@@ -63,7 +63,7 @@ def revenue_by_class(class_filter: list[str]) -> pl.DataFrame:
         .group_by("class")
         .agg(
             pl.col("ticket_count").sum(),
-            pl.col("revenue").sum(),
+            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
         )
         # convert E/P/B codes to readable names before returning
         .with_columns(_CABIN_LABEL)
@@ -88,7 +88,7 @@ def monthly_trend(
     return (
         lf.group_by("year", "month")
         .agg(
-            pl.col("revenue").sum(),
+            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
             pl.col("ticket_count").sum(),
         )
         .sort("year", "month")
@@ -101,4 +101,47 @@ def monthly_trend(
                 pl.lit(1),
             ).alias("date")
         )
+    )
+
+
+# returns revenue by origin/destination region pair
+def regional_revenue(
+    class_filter: list[str],
+    continent_filter: list[str],
+) -> pl.DataFrame:
+    route_meta = (
+        pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
+        .select(["route_code", "origin_continent", "dest_continent", "distance"])
+    )
+
+    return (
+        pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        .group_by("route_code")
+        .agg(
+            pl.col("ticket_count").sum(),
+            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
+        )
+        .join(route_meta, on="route_code", how="left")
+        .filter(pl.col("origin_continent").is_in(continent_filter))
+        .with_columns(
+            (
+                pl.col("origin_continent").fill_null("Unknown")
+                + " → "
+                + pl.col("dest_continent").fill_null("Unknown")
+            ).alias("region_pair")
+        )
+        .group_by(["origin_continent", "dest_continent", "region_pair"])
+        .agg(
+            pl.col("ticket_count").sum(),
+            pl.col("revenue").sum(),
+            pl.col("route_code").n_unique().alias("route_count"),
+            pl.col("distance").mean().alias("avg_distance"),
+        )
+        .with_columns(
+            (pl.col("revenue") / pl.col("ticket_count")).alias("avg_ticket_value"),
+            (pl.col("revenue") / pl.col("revenue").sum()).alias("revenue_share"),
+        )
+        .sort("revenue", descending=True)
+        .collect()
     )
