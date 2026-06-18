@@ -35,8 +35,8 @@ def revenue_by_route(
         .group_by("route_code")
         .agg(
             pl.col("ticket_count").sum(),
-            pl.col("revenue").sum(),
-            pl.col("avg_ticket_value").mean(),
+            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
+            pl.col("avg_ticket_value").mean().cast(pl.Float64).alias("avg_ticket_value"),
         )
         # bring in city names and continent from the routes file
         .join(route_meta, on="route_code", how="left")
@@ -63,7 +63,7 @@ def revenue_by_class(class_filter: list[str]) -> pl.DataFrame:
         .group_by("class")
         .agg(
             pl.col("ticket_count").sum(),
-            pl.col("revenue").sum(),
+            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
         )
         # convert E/P/B codes to readable names before returning
         .with_columns(_CABIN_LABEL)
@@ -88,7 +88,7 @@ def monthly_trend(
     return (
         lf.group_by("year", "month")
         .agg(
-            pl.col("revenue").sum(),
+            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
             pl.col("ticket_count").sum(),
         )
         .sort("year", "month")
