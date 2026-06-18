@@ -74,6 +74,33 @@ def get_kpi_totals(class_filter: tuple) -> tuple[float, int, float, int]:
     return total_revenue, total_tickets, avg_ticket, active_routes
 
 
+def format_month(row: dict) -> str:
+    return f"{int(row['year'])}-{int(row['month']):02d}"
+
+
+def describe_revenue_trend(df_trend: pl.DataFrame) -> str:
+    first_month = df_trend.head(1).row(0, named=True)
+    last_month = df_trend.tail(1).row(0, named=True)
+    first_revenue = float(first_month["revenue"])
+    last_revenue = float(last_month["revenue"])
+
+    if first_revenue == 0:
+        return "the trend cannot be compared because the first month has no revenue"
+
+    pct_change = (last_revenue - first_revenue) / first_revenue
+    if abs(pct_change) < 0.03:
+        direction = "remained broadly stable"
+    elif pct_change > 0:
+        direction = "increased"
+    else:
+        direction = "decreased"
+
+    return (
+        f"revenue {direction} from {format_month(first_month)} to {format_month(last_month)} "
+        f"({pct_change:+.1%})"
+    )
+
+
 # stop early if parquet files haven't been generated yet
 try:
     get_continents()
@@ -198,6 +225,40 @@ fig_trend = px.line(
 )
 fig_trend.update_traces(line_color="#1f77b4")
 st.plotly_chart(fig_trend, use_container_width=True)
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Section 3 – Conclusion
+# ---------------------------------------------------------------------------
+
+st.header("Conclusion")
+
+if df_top_routes.is_empty() or df_class.is_empty() or df_trend.is_empty():
+    st.info("No conclusion is available for the current filters because one or more charts have no data.")
+else:
+    top_route = df_top_routes.row(0, named=True)
+    top_class = df_class.row(0, named=True)
+    class_revenue_total = float(df_class["revenue"].sum())
+    top_class_share = float(top_class["revenue"]) / class_revenue_total if class_revenue_total else 0.0
+
+    peak_month = df_trend.sort("revenue", descending=True).row(0, named=True)
+    low_month = df_trend.sort("revenue").row(0, named=True)
+    trend_summary = describe_revenue_trend(df_trend)
+
+    st.markdown(
+        f"Based on the selected filters, ATT Airlines' revenue is concentrated in a small set of "
+        f"high-performing routes, led by **{top_route['route_label']}** with "
+        f"**${float(top_route['revenue']):,.0f}** in revenue. The strongest cabin class is "
+        f"**{top_class['cabin_class']}**, contributing **{top_class_share:.1%}** of filtered cabin "
+        "revenue, which shows that pricing and seat mix are central to the network's performance."
+        "\n\n"
+        f"The time-series view shows that **{format_month(peak_month)}** was the highest-revenue "
+        f"month and **{format_month(low_month)}** was the lowest-revenue month. Overall, "
+        f"**{trend_summary}**. This suggests the main opportunity is to protect the top-performing "
+        "routes while investigating seasonal demand swings and using cabin-class pricing to improve "
+        "weaker months."
+    )
 
 st.divider()
 
