@@ -56,6 +56,13 @@ def get_route_efficiency(
 
 
 @st.cache_data
+def get_revenue_by_airport(
+    class_filter: tuple, continent_filter: tuple
+) -> pl.DataFrame:
+    return an.revenue_by_airport(list(class_filter), list(continent_filter))
+
+
+@st.cache_data
 def get_continents() -> list[str]:
     return (
         pl.scan_parquet("data/routes_with_airports.parquet")
@@ -82,19 +89,12 @@ def get_years() -> list[int]:
     )
 
 
+# overall KPI numbers — honors both the class and origin-continent filters
 @st.cache_data
-def get_kpi_totals(class_filter: tuple) -> tuple[float, int, float, int]:
-    df = (
-        pl.scan_parquet("data/revenue_by_route_class.parquet")
-        .filter(pl.col("class").is_in(list(class_filter)))
-        .select(["revenue", "ticket_count", "route_code"])
-        .collect()
-    )
-    total_revenue = df["revenue"].sum()
-    total_tickets = int(df["ticket_count"].sum())
-    avg_ticket = total_revenue / total_tickets if total_tickets > 0 else 0.0
-    active_routes = df["route_code"].n_unique()
-    return total_revenue, total_tickets, avg_ticket, active_routes
+def get_kpi_totals(
+    class_filter: tuple, continent_filter: tuple
+) -> tuple[float, int, float, int]:
+    return an.kpi_totals(list(class_filter), list(continent_filter))
 
 
 @st.cache_data
@@ -294,7 +294,7 @@ with page_intro:
 with page_dashboard:
 
     total_revenue, total_tickets, avg_ticket, active_routes = get_kpi_totals(
-        class_filter
+        class_filter, continent_filter
     )
 
     k1, k2, k3, k4 = st.columns(4)
@@ -456,12 +456,48 @@ with page_dashboard:
     st.divider()
 
     # -----------------------------------------------------------------------
+    # Section 5 – Revenue by Origin Airport (map)
+    # -----------------------------------------------------------------------
+
+    st.header("Revenue by Origin Airport")
+    st.markdown(
+        "Each bubble is a departure airport, sized and coloured by the total revenue "
+        "of routes originating there. This puts the network's revenue on a world map "
+        "and highlights the geographic hubs that anchor it. Revenue is attributed to "
+        "the route's origin airport."
+    )
+
+    df_airports = get_revenue_by_airport(class_filter, continent_filter)
+    if df_airports.is_empty():
+        st.info("No airport revenue to map for the current filters.")
+    else:
+        fig_map = px.scatter_geo(
+            df_airports,
+            lat="origin_lat", lon="origin_lon",
+            size="revenue", color="revenue",
+            hover_name="origin_city",
+            hover_data={
+                "origin_airport": True,
+                "ticket_count": ":,",
+                "revenue": ":,.0f",
+                "origin_lat": False, "origin_lon": False,
+            },
+            color_continuous_scale="Blues",
+            projection="natural earth",
+            title="Total Revenue by Origin Airport",
+        )
+        fig_map.update_layout(coloraxis_colorbar_title="Revenue ($)")
+        st.plotly_chart(fig_map, use_container_width=True)
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
     # Data preview & download
     # -----------------------------------------------------------------------
 
     st.header("Data Preview")
 
-    tab1, tab2 = st.tabs(["Top Routes", "Monthly Trend"])
+    tab1, tab2, tab3 = st.tabs(["Top Routes", "Monthly Trend", "Airports"])
 
     with tab1:
         st.dataframe(df_top_routes.drop("route_label"), use_container_width=True)
@@ -477,6 +513,14 @@ with page_dashboard:
             "Download CSV",
             df_trend.to_pandas().to_csv(index=False),
             "monthly_trend.csv", "text/csv",
+        )
+
+    with tab3:
+        st.dataframe(df_airports, use_container_width=True)
+        st.download_button(
+            "Download CSV",
+            df_airports.to_pandas().to_csv(index=False),
+            "revenue_by_airport.csv", "text/csv",
         )
 
     st.caption("Source: ATTPLANE DB2 · Schema: ATTGRP4 · Built with Polars + Streamlit")
@@ -578,9 +622,10 @@ with page_conclusions:
         "- **Load factor analysis**: If seat capacity data were available, computing "
         "revenue per available seat-km (RASK) would give a much more precise picture "
         "of route profitability - the industry standard metric.\n"
-        "- **Route network map**: Plotting origin-destination pairs on a world map "
-        "with arc thickness proportional to revenue would make the network structure "
-        "immediately intuitive and visually compelling.\n"
+        "- **Route network map**: The dashboard now maps revenue by origin airport. "
+        "A natural extension is to draw the full origin-destination network as arcs "
+        "with thickness proportional to revenue, making the network structure even "
+        "more intuitive.\n"
         "- **Passenger segmentation**: With row-level ticket data it would be possible "
         "to analyse booking lead times, repeat customers, and origin-country of "
         "passengers - useful for targeted marketing.\n"
