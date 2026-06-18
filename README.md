@@ -21,6 +21,20 @@ uv run pip install ibm_db ibm_db_sa
 > install cleanly through a standard `pip install`. Using `uv sync` first, then installing
 > `ibm_db` and `ibm_db_sa` separately into the uv-managed venv, is the workaround that works.
 
+## Activate the Virtual Environment
+
+**Windows (PowerShell):**
+
+```powershell
+.venv\Scripts\activate
+```
+
+**Mac / Linux:**
+
+```bash
+source .venv/bin/activate
+```
+
 ## How to Run
 
 **Step 1 – create a `.env` file with your DB2 credentials (required before running anything):**
