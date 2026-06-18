@@ -259,3 +259,44 @@ def kpi_totals(
     avg_ticket = total_revenue / total_tickets if total_tickets > 0 else 0.0
     active_routes = df["route_code"].n_unique()
     return total_revenue, total_tickets, avg_ticket, active_routes
+
+
+# returns revenue by origin -> destination continent pair (for the region heatmap)
+def regional_revenue(
+    class_filter: list[str],
+    continent_filter: list[str],
+) -> pl.DataFrame:
+    route_meta = (
+        pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
+        .select(["route_code", "origin_continent", "dest_continent", "distance"])
+    )
+    return (
+        pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        .with_columns(pl.col("revenue").cast(pl.Float64))
+        .group_by("route_code")
+        .agg(pl.col("ticket_count").sum(), pl.col("revenue").sum())
+        .join(route_meta, on="route_code", how="left")
+        .filter(pl.col("origin_continent").is_in(continent_filter))
+        .with_columns(
+            (
+                pl.col("origin_continent").fill_null("Unknown")
+                + " → "
+                + pl.col("dest_continent").fill_null("Unknown")
+            ).alias("region_pair")
+        )
+        # one row per origin/destination continent pair
+        .group_by(["origin_continent", "dest_continent", "region_pair"])
+        .agg(
+            pl.col("ticket_count").sum(),
+            pl.col("revenue").sum(),
+            pl.col("route_code").n_unique().alias("route_count"),
+            pl.col("distance").mean().alias("avg_distance"),
+        )
+        .with_columns(
+            (pl.col("revenue") / pl.col("ticket_count")).alias("avg_ticket_value"),
+            (pl.col("revenue") / pl.col("revenue").sum()).alias("revenue_share"),
+        )
+        .sort("revenue", descending=True)
+        .collect()
+    )

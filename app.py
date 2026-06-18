@@ -1,5 +1,6 @@
 import polars as pl
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 import analysis as an
@@ -63,6 +64,13 @@ def get_revenue_by_airport(
 
 
 @st.cache_data
+def get_regional_revenue(
+    class_filter: tuple, continent_filter: tuple
+) -> pl.DataFrame:
+    return an.regional_revenue(list(class_filter), list(continent_filter))
+
+
+@st.cache_data
 def get_continents() -> list[str]:
     return (
         pl.scan_parquet("data/routes_with_airports.parquet")
@@ -111,6 +119,49 @@ def get_db_stats() -> dict:
         "year_min": int(monthly["year"].min()),
         "year_max": int(monthly["year"].max()),
     }
+
+
+# compact money formatting for the heatmap cell labels (e.g. $1.2B)
+def format_compact_money(value: float) -> str:
+    value = float(value)
+    if abs(value) >= 1_000_000_000:
+        return f"${value / 1_000_000_000:.1f}B"
+    if abs(value) >= 1_000_000:
+        return f"${value / 1_000_000:.1f}M"
+    if abs(value) >= 1_000:
+        return f"${value / 1_000:.1f}K"
+    return f"${value:,.0f}"
+
+
+# builds an origin-region × destination-region revenue heatmap
+def build_region_heatmap(df_regions: pl.DataFrame) -> go.Figure:
+    origin_regions = df_regions["origin_continent"].unique().sort().to_list()
+    dest_regions = df_regions["dest_continent"].unique().sort().to_list()
+    lookup = {
+        (row["origin_continent"], row["dest_continent"]): float(row["revenue"])
+        for row in df_regions.to_dicts()
+    }
+    z_values, text_values = [], []
+    for origin in origin_regions:
+        z_values.append([lookup.get((origin, dest), 0.0) for dest in dest_regions])
+        text_values.append([format_compact_money(lookup.get((origin, dest), 0.0)) for dest in dest_regions])
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_values, x=dest_regions, y=origin_regions,
+            text=text_values, texttemplate="%{text}",
+            colorscale="Blues",
+            hovertemplate=(
+                "Origin: %{y}<br>Destination: %{x}<br>Revenue: %{text}<extra></extra>"
+            ),
+        )
+    )
+    fig.update_layout(
+        title="Revenue by Origin and Destination Region",
+        xaxis_title="Destination Region",
+        yaxis_title="Origin Region",
+    )
+    return fig
 
 
 # stop early if parquet files haven't been generated yet
@@ -388,6 +439,25 @@ with page_dashboard:
     st.divider()
 
     # -----------------------------------------------------------------------
+    # Section 2b – Revenue by Region (Origin → Destination)
+    # -----------------------------------------------------------------------
+
+    st.header("Revenue by Region (Origin → Destination)")
+    st.markdown(
+        "Total revenue for every origin-continent to destination-continent pairing. "
+        "Reading across a row shows where a region's outbound traffic earns the most; "
+        "reading down a column shows which inbound markets are most valuable."
+    )
+
+    df_regions = get_regional_revenue(class_filter, continent_filter)
+    if df_regions.is_empty():
+        st.info("No regional revenue to show for the current filters.")
+    else:
+        st.plotly_chart(build_region_heatmap(df_regions), use_container_width=True)
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
     # Section 3 – Revenue Over Time
     # -----------------------------------------------------------------------
 
@@ -497,7 +567,9 @@ with page_dashboard:
 
     st.header("Data Preview")
 
-    tab1, tab2, tab3 = st.tabs(["Top Routes", "Monthly Trend", "Airports"])
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["Top Routes", "Monthly Trend", "Airports", "Regions"]
+    )
 
     with tab1:
         st.dataframe(df_top_routes.drop("route_label"), use_container_width=True)
@@ -521,6 +593,14 @@ with page_dashboard:
             "Download CSV",
             df_airports.to_pandas().to_csv(index=False),
             "revenue_by_airport.csv", "text/csv",
+        )
+
+    with tab4:
+        st.dataframe(df_regions, use_container_width=True)
+        st.download_button(
+            "Download CSV",
+            df_regions.to_pandas().to_csv(index=False),
+            "regional_revenue.csv", "text/csv",
         )
 
     st.caption("Source: ATTPLANE DB2 · Schema: ATTGRP4 · Built with Polars + Streamlit")

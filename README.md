@@ -61,6 +61,7 @@ The dashboard focuses on revenue performance across the airline network using th
 - Top N routes by total revenue and average ticket value (filterable by cabin class and continent)
 - Revenue share by cabin class (Economy, Premium, Business)
 - Revenue and ticket volume by origin continent
+- Revenue heatmap by origin → destination region pair
 - Monthly revenue trend, overall and stacked by cabin class (filterable by year)
 - Route efficiency: top routes by revenue per km
 - Revenue by origin airport on a world map (filterable by cabin class and continent)
