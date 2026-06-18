@@ -16,7 +16,7 @@ _CABIN_LABEL = (
 )
 
 
-# returns the top N routes by total revenue, filtered by cabin class and continent
+# returns the top N routes by total revenue, filtered by class and continent
 def revenue_by_route(
     class_filter: list[str],
     continent_filter: list[str],
@@ -25,18 +25,27 @@ def revenue_by_route(
     # pull only the columns we need from routes to keep the join light
     route_meta = (
         pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
-        .select(["route_code", "origin_city", "dest_city", "origin_continent", "distance"])
+        .select([
+            "route_code", "origin_city", "dest_city",
+            "origin_continent", "distance",
+        ])
     )
 
     return (
         pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
         .filter(pl.col("class").is_in(class_filter))
+        # cast the DB2 Decimal to float so the metric formats cleanly downstream
+        .with_columns(pl.col("revenue").cast(pl.Float64))
         # collapse the class breakdown into one row per route
         .group_by("route_code")
         .agg(
             pl.col("ticket_count").sum(),
-            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
-            pl.col("avg_ticket_value").mean().cast(pl.Float64).alias("avg_ticket_value"),
+            pl.col("revenue").sum(),
+        )
+        # avg ticket value must be recomputed from the route totals — averaging
+        # the per-class averages would be wrong when classes have different volumes
+        .with_columns(
+            (pl.col("revenue") / pl.col("ticket_count")).alias("avg_ticket_value")
         )
         # bring in city names and continent from the routes file
         .join(route_meta, on="route_code", how="left")
@@ -55,7 +64,7 @@ def revenue_by_route(
     )
 
 
-# returns total revenue and ticket count per cabin class (used for the donut chart)
+# returns total revenue and ticket count per cabin class (for the donut chart)
 def revenue_by_class(class_filter: list[str]) -> pl.DataFrame:
     return (
         pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
@@ -63,7 +72,7 @@ def revenue_by_class(class_filter: list[str]) -> pl.DataFrame:
         .group_by("class")
         .agg(
             pl.col("ticket_count").sum(),
-            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
+            pl.col("revenue").sum(),
         )
         # convert E/P/B codes to readable names before returning
         .with_columns(_CABIN_LABEL)
@@ -81,14 +90,14 @@ def monthly_trend(
         pl.scan_parquet(DATA_DIR / "monthly_revenue.parquet")
         .filter(pl.col("class").is_in(class_filter))
     )
-    # year filter is optional — if None, all years are included
+    # year filter is optional - if None, all years are included
     if year_filter is not None:
         lf = lf.filter(pl.col("year") == year_filter)
 
     return (
         lf.group_by("year", "month")
         .agg(
-            pl.col("revenue").sum().cast(pl.Float64).alias("revenue"),
+            pl.col("revenue").sum(),
             pl.col("ticket_count").sum(),
         )
         .sort("year", "month")
@@ -102,3 +111,151 @@ def monthly_trend(
             ).alias("date")
         )
     )
+
+
+# returns monthly revenue keeping the class dimension for a stacked chart
+def monthly_by_class(
+    class_filter: list[str],
+    year_filter: int | None = None,
+) -> pl.DataFrame:
+    lf = (
+        pl.scan_parquet(DATA_DIR / "monthly_revenue.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        .with_columns(_CABIN_LABEL)
+    )
+    if year_filter is not None:
+        lf = lf.filter(pl.col("year") == year_filter)
+    return (
+        lf.sort("year", "month")
+        .collect()
+        .with_columns(
+            pl.date(
+                pl.col("year").cast(pl.Int32),
+                pl.col("month").cast(pl.Int32),
+                pl.lit(1),
+            ).alias("date")
+        )
+    )
+
+
+# returns total revenue and ticket count grouped by origin continent
+def revenue_by_continent(class_filter: list[str]) -> pl.DataFrame:
+    route_meta = (
+        pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
+        .select(["route_code", "origin_continent"])
+    )
+    return (
+        pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        .group_by("route_code")
+        .agg(pl.col("ticket_count").sum(), pl.col("revenue").sum())
+        .join(route_meta, on="route_code", how="left")
+        .filter(pl.col("origin_continent").is_not_null())
+        .group_by("origin_continent")
+        .agg(pl.col("revenue").sum(), pl.col("ticket_count").sum())
+        .sort("revenue", descending=True)
+        .collect()
+    )
+
+
+# returns top N routes ranked by revenue per km - reveals route efficiency
+def route_efficiency(
+    class_filter: list[str],
+    continent_filter: list[str],
+    top_n: int = 15,
+) -> pl.DataFrame:
+    route_meta = (
+        pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
+        .select([
+            "route_code", "origin_city", "dest_city",
+            "origin_continent", "distance",
+        ])
+    )
+    return (
+        pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        .group_by("route_code")
+        .agg(pl.col("ticket_count").sum(), pl.col("revenue").sum())
+        .join(route_meta, on="route_code", how="left")
+        .filter(pl.col("origin_continent").is_in(continent_filter))
+        .filter(pl.col("distance").is_not_null())
+        .filter(pl.col("distance") > 0)
+        .with_columns(
+            (pl.col("revenue") / pl.col("distance")).alias("revenue_per_km"),
+            (
+                pl.col("origin_city").fill_null(pl.col("route_code"))
+                + " → "
+                + pl.col("dest_city").fill_null("?")
+            ).alias("route_label"),
+        )
+        .sort("revenue_per_km", descending=True)
+        .head(top_n)
+        .collect()
+    )
+
+
+# returns total revenue per origin airport with coordinates, for the map view
+def revenue_by_airport(
+    class_filter: list[str],
+    continent_filter: list[str],
+) -> pl.DataFrame:
+    # origin airport coordinates and continent, one row per route
+    route_meta = (
+        pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
+        .select([
+            "route_code", "origin", "origin_airport", "origin_city",
+            "origin_continent", "origin_lat", "origin_lon",
+        ])
+    )
+    return (
+        pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        # cast the DB2 Decimal so Plotly can size/colour the bubbles
+        .with_columns(pl.col("revenue").cast(pl.Float64))
+        .group_by("route_code")
+        .agg(pl.col("ticket_count").sum(), pl.col("revenue").sum())
+        .join(route_meta, on="route_code", how="left")
+        .filter(pl.col("origin_continent").is_in(continent_filter))
+        # revenue is attributed to the route's departure (origin) airport
+        .group_by("origin")
+        .agg(
+            pl.col("origin_airport").first(),
+            pl.col("origin_city").first(),
+            pl.col("origin_continent").first(),
+            pl.col("origin_lat").first(),
+            pl.col("origin_lon").first(),
+            pl.col("ticket_count").sum(),
+            pl.col("revenue").sum(),
+        )
+        # can't plot an airport without coordinates
+        .drop_nulls(["origin_lat", "origin_lon"])
+        .sort("revenue", descending=True)
+        .collect()
+    )
+
+
+# overall KPI numbers — honors both the class and origin-continent filters
+def kpi_totals(
+    class_filter: list[str],
+    continent_filter: list[str],
+) -> tuple[float, int, float, int]:
+    route_meta = (
+        pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
+        .select(["route_code", "origin_continent"])
+    )
+    df = (
+        pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        .with_columns(pl.col("revenue").cast(pl.Float64))
+        .group_by("route_code")
+        .agg(pl.col("ticket_count").sum(), pl.col("revenue").sum())
+        .join(route_meta, on="route_code", how="left")
+        .filter(pl.col("origin_continent").is_in(continent_filter))
+        .select(["revenue", "ticket_count", "route_code"])
+        .collect()
+    )
+    total_revenue = float(df["revenue"].sum() or 0.0)
+    total_tickets = int(df["ticket_count"].sum() or 0)
+    avg_ticket = total_revenue / total_tickets if total_tickets > 0 else 0.0
+    active_routes = df["route_code"].n_unique()
+    return total_revenue, total_tickets, avg_ticket, active_routes
