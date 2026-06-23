@@ -2,6 +2,7 @@ import polars as pl
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 import analysis as an
 
@@ -47,6 +48,13 @@ def get_monthly_by_class(
 @st.cache_data
 def get_revenue_by_continent(class_filter: tuple) -> pl.DataFrame:
     return an.revenue_by_continent(list(class_filter))
+
+
+@st.cache_data
+def get_tax_by_continent(
+    class_filter: tuple, continent_filter: tuple
+) -> pl.DataFrame:
+    return an.tax_by_continent(list(class_filter), list(continent_filter))
 
 
 @st.cache_data
@@ -160,6 +168,54 @@ def build_region_heatmap(df_regions: pl.DataFrame) -> go.Figure:
         title="Revenue by Origin and Destination Region",
         xaxis_title="Destination Region",
         yaxis_title="Origin Region",
+    )
+    return fig
+
+
+# combo chart: tax amounts as grouped bars + effective tax rate as a line overlay
+def build_tax_chart(df_tax: pl.DataFrame) -> go.Figure:
+    continents = df_tax["origin_continent"].to_list()
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # left axis – absolute tax collected, split into airport vs local
+    fig.add_trace(
+        go.Bar(
+            x=continents, y=df_tax["total_airport_tax"].to_list(),
+            name="Airport Tax", marker_color="#1f77b4",
+            hovertemplate="%{x}<br>Airport Tax: $%{y:,.0f}<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=continents, y=df_tax["total_local_tax"].to_list(),
+            name="Local Tax", marker_color="#aec7e8",
+            hovertemplate="%{x}<br>Local Tax: $%{y:,.0f}<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+    # right axis – effective tax rate (all taxes as a share of ticket revenue)
+    fig.add_trace(
+        go.Scatter(
+            x=continents, y=df_tax["tax_rate_pct"].to_list(),
+            name="Effective Tax Rate", mode="lines+markers",
+            line={"color": "#d62728", "width": 3},
+            hovertemplate="%{x}<br>Tax Rate: %{y:.1f}%<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(
+        title="Tax Burden by Origin Continent",
+        barmode="stack",
+        legend={
+            "orientation": "h", "yanchor": "bottom", "y": 1.02,
+            "xanchor": "right", "x": 1,
+        },
+    )
+    fig.update_xaxes(title_text="Origin Continent")
+    fig.update_yaxes(title_text="Tax Collected ($)", secondary_y=False)
+    fig.update_yaxes(
+        title_text="Effective Tax Rate (%)", secondary_y=True, rangemode="tozero"
     )
     return fig
 
@@ -439,6 +495,27 @@ with page_dashboard:
     st.divider()
 
     # -----------------------------------------------------------------------
+    # Section 2a – Tax Burden by Continent
+    # -----------------------------------------------------------------------
+
+    st.header("Tax Burden by Origin Continent")
+    st.markdown(
+        "Airport and local taxes collected on top of ticket revenue, split by the "
+        "continent the flight departs from. The bars show the absolute tax collected; "
+        "the red line shows the **effective tax rate** (total tax as a percentage of "
+        "revenue), which reveals where the regulatory cost of selling a ticket is "
+        "highest regardless of raw volume."
+    )
+
+    df_tax = get_tax_by_continent(class_filter, continent_filter)
+    if df_tax.is_empty():
+        st.info("No tax data to show for the current filters.")
+    else:
+        st.plotly_chart(build_tax_chart(df_tax), use_container_width=True)
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
     # Section 2b – Revenue by Region (Origin → Destination)
     # -----------------------------------------------------------------------
 
@@ -567,8 +644,8 @@ with page_dashboard:
 
     st.header("Data Preview")
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["Top Routes", "Monthly Trend", "Airports", "Regions"]
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["Top Routes", "Monthly Trend", "Airports", "Regions", "Tax"]
     )
 
     with tab1:
@@ -601,6 +678,14 @@ with page_dashboard:
             "Download CSV",
             df_regions.to_pandas().to_csv(index=False),
             "regional_revenue.csv", "text/csv",
+        )
+
+    with tab5:
+        st.dataframe(df_tax, use_container_width=True)
+        st.download_button(
+            "Download CSV",
+            df_tax.to_pandas().to_csv(index=False),
+            "tax_by_continent.csv", "text/csv",
         )
 
     st.caption("Source: ATTPLANE DB2 · Schema: ATTGRP4 · Built with Polars + Streamlit")

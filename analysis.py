@@ -158,6 +158,56 @@ def revenue_by_continent(class_filter: list[str]) -> pl.DataFrame:
     )
 
 
+# returns airport tax, local tax and the effective tax rate per origin continent
+def tax_by_continent(
+    class_filter: list[str],
+    continent_filter: list[str],
+) -> pl.DataFrame:
+    # total_airport_tax / total_local_tax are fetched by db.py but were unused —
+    # this surfaces the tax burden that sits on top of each continent's revenue
+    route_meta = (
+        pl.scan_parquet(DATA_DIR / "routes_with_airports.parquet")
+        .select(["route_code", "origin_continent"])
+    )
+    return (
+        pl.scan_parquet(DATA_DIR / "revenue_by_route_class.parquet")
+        .filter(pl.col("class").is_in(class_filter))
+        # cast the DB2 Decimals to float so the ratios format cleanly downstream
+        .with_columns(
+            pl.col("revenue").cast(pl.Float64),
+            pl.col("total_airport_tax").cast(pl.Float64),
+            pl.col("total_local_tax").cast(pl.Float64),
+        )
+        .group_by("route_code")
+        .agg(
+            pl.col("revenue").sum(),
+            pl.col("total_airport_tax").sum(),
+            pl.col("total_local_tax").sum(),
+        )
+        .join(route_meta, on="route_code", how="left")
+        .filter(pl.col("origin_continent").is_not_null())
+        .filter(pl.col("origin_continent").is_in(continent_filter))
+        .group_by("origin_continent")
+        .agg(
+            pl.col("revenue").sum(),
+            pl.col("total_airport_tax").sum(),
+            pl.col("total_local_tax").sum(),
+        )
+        .with_columns(
+            (pl.col("total_airport_tax") + pl.col("total_local_tax")).alias("total_tax")
+        )
+        # effective tax rate = all taxes collected / ticket revenue for that continent
+        .with_columns(
+            pl.when(pl.col("revenue") > 0)
+            .then((pl.col("total_tax") / pl.col("revenue")) * 100)
+            .otherwise(0.0)
+            .alias("tax_rate_pct")
+        )
+        .sort("total_tax", descending=True)
+        .collect()
+    )
+
+
 # returns top N routes ranked by revenue per km - reveals route efficiency
 def route_efficiency(
     class_filter: list[str],
